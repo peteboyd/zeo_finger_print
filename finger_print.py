@@ -3,8 +3,10 @@ import os
 import sys
 import numpy as np
 from time import time
+import platform
 import tarfile
-sys.path[:0] = ['/home/pboyd/modules/faps']
+sys.path[:0] = ['/home/pboyd/modules/faps',
+               os.path.join(os.getcwd(),"build","lib.%s-%s-%i.%i"%(platform.system().lower(), platform.machine(), sys.version_info.major, sys.version_info.minor))]
 from faps import Structure, Atom, Cell
 from elements import UFF
 from scipy.spatial import Voronoi, distance

@@ -1,6 +1,6 @@
-#include "stdlib.h"
+#define NPY_NO_DEPRECIATED_API NPY_1_7_API_VERSION
 #include "Python.h"
-
+#include "numpy/arrayobject.h"
 struct module_state{
     PyObject *error;
 };
@@ -19,33 +19,65 @@ error_out(PyObject *m){
     return NULL;
 }
 
-static PyMethodDef myextension_methods[] = {
+static PyMethodDef _methods[] = {
     {"error_out", (PyCFunction)error_out, METH_NOARGS, NULL},
     {NULL, NULL}
 };
 
 
 #if PY_MAJOR_VERSION >= 3
-static int myextension_traverse(PyObject *m, visitproc visit, void *arg){
+static int _traverse(PyObject *m, visitproc visit, void *arg){
     Py_VISIT(GETSTATE(m)->error);
     return 0;
 }
 
-static int myextension_clear(PyObject *m){
+static int _clear(PyObject *m){
     Py_CLEAR(GETSTATE(m)->error);
     return 0;
 }
 
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
-    "myextension",
+    "sphere_exclude",
     NULL,
     sizeof(struct module_state),
-    myextension_methods,
+    _methods,
     NULL,
-    myextension_traverse,
-    myextension_clear,
+    _traverse,
+    _clear,
     NULL
 };
+
+#define INITERROR return NULL
+
+PyObject*
+PyInit_sphere_exclude(void)
+
+#else
+#define INITERROR return
+
+void
+initsphere_exclude(void)
+#endif
+{
+#if PY_MAJOR_VERSION >= 3
+    PyObject *module = PyModule_Create(&moduledef);
+#else
+    PyObject *module = Py_InitModule("sphere_exclude", _methods);
+#endif
+    if (module==NULL)
+        INITERROR;
+    struct module_state *st=GETSTATE(module);
+
+    st->error = PyErr_NewException("myextension.Error", NULL, NULL);
+    if (st->error=NULL){
+        Py_DECREF(module);
+        INITERROR;
+    }
+
+#if PY_MAJOR_VERSION >= 3
+    return module;
+#endif
+}
 
 
