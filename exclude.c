@@ -2,88 +2,44 @@
 #include "Python.h"
 #include "numpy/arrayobject.h"
 #include <math.h>
-struct module_state{
-    PyObject *error;
-};
 
-#if PY_MAJOR_VERSION >= 3
-#define GETSTATE(m) ((struct module_state*)PyModule_GetState(m))
-#else
-#define GETSTATE(m) (&_state)
-static struct module_state _state;
-#endif
 int intersect_voronoi_nodes(double*, double*, double*, double*, double*, PyArrayObject*, PyArrayObject*);
 static PyObject *compute_collision_array(PyObject*, PyObject*);
 
-
-static PyObject*
-error_out(PyObject *m){
-    struct module_state *st = GETSTATE(m);
-    PyErr_SetString(st->error, "something bad happened");
-    return NULL;
-}
-
 static PyMethodDef _methods[] = {
-    {"error_out", (PyCFunction)error_out, METH_NOARGS, NULL},
     {"compute_collision_array", (PyCFunction)compute_collision_array, METH_VARARGS, NULL},
     {NULL, NULL}
 };
 
 
 #if PY_MAJOR_VERSION >= 3
-static int _traverse(PyObject *m, visitproc visit, void *arg){
-    Py_VISIT(GETSTATE(m)->error);
-    return 0;
-}
-
-static int _clear(PyObject *m){
-    Py_CLEAR(GETSTATE(m)->error);
-    return 0;
-}
-
-static struct PyModuleDef moduledef = {
-    PyModuleDef_HEAD_INIT,
-    "sphere_exclude",
-    NULL,
-    sizeof(struct module_state),
-    _methods,
-    NULL,
-    _traverse,
-    _clear,
-    NULL
-};
-
-#define INITERROR return NULL
-
-PyObject*
-PyInit_sphere_exclude(void)
-
+    #define MOD_ERROR_VAL NULL
+    #define MOD_SUCCESS_VAL(val) val
+    #define MOD_INIT(name) PyMODINIT_FUNC PyInit_##name(void)
+    #define MOD_DEF(ob, name, doc, methods) \
+        static struct PyModuleDef moduledef = { \
+            PyModuleDef_HEAD_INIT, name, doc, -1, methods, };\
+            ob=PyModule_Create(&moduledef);
+    #define PyInt_FromLong PyLong_FromLong
 #else
-#define INITERROR return
-
-void
-initsphere_exclude(void)
+    #define MOD_ERROR_VAL
+    #define MOD_SUCCESS_VAL(val)
+    #define MOD_INIT(name) void init##name(void)
+    #define MOD_DEF(ob, name, doc, methods) \
+        ob = Py_InitModule3(name, methods, doc);
 #endif
+
+MOD_INIT(SphereCollision)
 {
-#if PY_MAJOR_VERSION >= 3
-    PyObject *module = PyModule_Create(&moduledef);
-#else
-    PyObject *module = Py_InitModule("sphere_exclude", _methods);
-#endif
-    if (module==NULL)
-        INITERROR;
-    struct module_state *st=GETSTATE(module);
+    PyObject *m;
+    MOD_DEF(m, "SphereCollision", "Computes line segment collisions with voronoi nodes",
+            _methods)
+    if (m==NULL)
+        return MOD_ERROR_VAL;
 
-    st->error = PyErr_NewException("myextension.Error", NULL, NULL);
-    if (st->error=NULL){
-        Py_DECREF(module);
-        INITERROR;
-    }
-
-#if PY_MAJOR_VERSION >= 3
-    return module;
-#endif
+    return MOD_SUCCESS_VAL(m);
 }
+
 
 int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, double* v1, PyArrayObject* vor_nodes, PyArrayObject* radii){
 
@@ -93,7 +49,7 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
     void * ind;
     int j, k, array_val;
     vor_shape = PyArray_DIMS(vor_nodes);
-    array_val = 1;
+    array_val = 0;
     for (j = 0; j< vor_shape[0]; j++){
         u = 0.0;
         div = 0.0;
@@ -119,7 +75,7 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
             }
             len = sqrt(len);
             if (len <= rad){
-               array_val = 0;
+               array_val = 1;
             }
         }
 
@@ -134,6 +90,9 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
     PyArrayObject* radii;
     PyObject* arr_item1;
     PyObject* arr_item2;
+    PyObject* val;
+    PyArrayObject* collision_array = NULL;
+
     if (!PyArg_ParseTuple(args, "OOO",
                           &atoms,
                           &vor_nodes,
@@ -141,9 +100,11 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
         return NULL;
     };
 
-    npy_intp* shape;
-    shape = PyArray_DIMS(atoms);
-    int i, j, k;
+    npy_intp dims[2]; 
+    npy_intp* shape = PyArray_DIMS(atoms);
+    dims[0] = shape[0];
+    dims[1] = shape[0];
+    int i, j, k, intersect;
     void* ind1;
     void* ind2;
     double d1, d2;
@@ -157,6 +118,10 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
     p3 = (double*)malloc(sizeof(double)*(int)shape[1]);
     v1 = (double*)malloc(sizeof(double)*(int)shape[1]);
     p2p1 = (double*)malloc(sizeof(double)*(int)shape[1]);
+    printf("%i, %i\n", dims[0], dims[1]);
+    collision_array = PyArray_ZEROS(2, dims, NPY_INT, 0);
+    printf("HERE\n");
+
     for (i=0; i<shape[0]; i++){
         for (j=i+1; j<shape[0]; j++){
             for (k=0; k<shape[1]; k++){
@@ -173,6 +138,15 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
                 Py_DECREF(arr_item1);
                 Py_DECREF(arr_item2);
             }
+            intersect = intersect_voronoi_nodes(p1, p2, p3, p2p1, v1, vor_nodes, radii);
+            val=PyInt_FromLong(intersect);
+            ind1 = PyArray_GETPTR2(collision_array, (npy_intp) i, (npy_intp) j);
+            PyArray_SETITEM(collision_array, (char*) ind1, val);
+            Py_DECREF(val);
+            val=PyInt_FromLong(intersect);
+            ind1 = PyArray_GETPTR2(collision_array, (npy_intp) j, (npy_intp) i);
+            PyArray_SETITEM(collision_array, (char*) ind1, val);
+            Py_DECREF(val);
         }
     }
     free(p1);
@@ -180,4 +154,5 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
     free(p3);
     free(v1);
     free(p2p1);
+    return PyArray_Return(collision_array);
 }
