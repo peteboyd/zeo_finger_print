@@ -7,7 +7,12 @@ from time import time
 import platform
 import tarfile
 sys.path[:0] = ['/home/pboyd/modules/faps',
-                join(dirname(dirname(realpath(__file__))),"build","lib.%s-%s-%i.%i"%(platform.system().lower(), platform.machine(), sys.version_info.major, sys.version_info.minor))]
+                join(dirname(realpath(__file__)),
+                     "build","lib.%s-%s-%i.%i"%(platform.system().lower(), 
+                                                platform.machine(), 
+                                                sys.version_info.major, 
+                                                sys.version_info.minor))]
+from SphereCollision import compute_collision_array 
 from faps import Structure, Atom, Cell
 from elements import UFF
 from scipy.spatial import Voronoi, distance
@@ -18,6 +23,7 @@ import itertools
 from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 from matplotlib.patches import Circle, PathPatch
+
 cutoff=25
 probe=1.86
 def get_exclude_dists(voro,rads, xyzarray):
@@ -129,6 +135,7 @@ def main():
     verts = np.delete(verts, rem, axis=0)
     v_rads = np.delete(v_rads, rem, axis=0)
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
+    collisions = compute_collision_array(xyzcoords, verts, v_rads)
     pair_dist = distance.cdist(xyzcoords, xyzcoords)
     timef=time()
     print("Walltime: %.2f seconds"%(timef-times))
