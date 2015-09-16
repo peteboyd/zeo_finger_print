@@ -91,8 +91,9 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
     PyObject* arr_item;
     double d, rad, u, div, len;
     void * ind;
-    int j, k;
+    int j, k, array_val;
     vor_shape = PyArray_DIMS(vor_nodes);
+    array_val = 1;
     for (j = 0; j< vor_shape[0]; j++){
         u = 0.0;
         div = 0.0;
@@ -101,7 +102,7 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
             arr_item = PyArray_GETITEM(vor_nodes, (char*) ind);
             d = PyFloat_AsDouble(arr_item);
             v1[k] = d;
-            u += (d - p1[k])
+            u += (d - p1[k]);
             div += p2p1[k]*p2p1[k];
             Py_DECREF(arr_item);
         }
@@ -110,9 +111,8 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
         arr_item = PyArray_GETITEM(radii, (char*) ind);
         rad = PyFloat_AsDouble(arr_item);
         Py_DECREF(arr_item);
-        array_val = 1;
-        if(u >= 0)&&(u <= 1){
-            len=0.0
+        if((u >= 0)&&(u <= 1)){
+            len=0.0;
             for (k=0; k<vor_shape[1]; k++){
                 d = (u*p2p1[k] + p1[k] - v1[k]);
                 len += d*d;
@@ -151,6 +151,7 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
     double *p2;
     double *p3;
     double *p2p1;
+    double *v1;
     p1 = (double*)malloc(sizeof(double)*(int)shape[1]);
     p2 = (double*)malloc(sizeof(double)*(int)shape[1]);
     p3 = (double*)malloc(sizeof(double)*(int)shape[1]);
