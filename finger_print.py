@@ -6,7 +6,7 @@ import numpy as np
 from time import time
 import platform
 import tarfile
-sys.path[:0] = ['/home/pboyd/modules/faps',
+sys.path[:0] = [os.path.expandvars('$HOME/modules/faps'),
                 join(dirname(realpath(__file__)),
                      "build","lib.%s-%s-%i.%i"%(platform.system().lower(), 
                                                 platform.machine(), 
@@ -136,6 +136,7 @@ def main():
     v_rads = np.delete(v_rads, rem, axis=0)
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
     collisions = compute_collision_array(xyzcoords, verts, v_rads)
+    #print(np.where(collisions>0))
     pair_dist = distance.cdist(xyzcoords, xyzcoords)
     timef=time()
     print("Walltime: %.2f seconds"%(timef-times))

@@ -19,14 +19,16 @@ static PyMethodDef _methods[] = {
     #define MOD_DEF(ob, name, doc, methods) \
         static struct PyModuleDef moduledef = { \
             PyModuleDef_HEAD_INIT, name, doc, -1, methods, };\
-            ob=PyModule_Create(&moduledef);
+            ob = PyModule_Create(&moduledef);\
+            import_array();
     #define PyInt_FromLong PyLong_FromLong
 #else
     #define MOD_ERROR_VAL
     #define MOD_SUCCESS_VAL(val)
     #define MOD_INIT(name) void init##name(void)
     #define MOD_DEF(ob, name, doc, methods) \
-        ob = Py_InitModule3(name, methods, doc);
+        ob = Py_InitModule3(name, methods, doc);\
+        import_array();
 #endif
 
 MOD_INIT(SphereCollision)
@@ -58,7 +60,7 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
             arr_item = PyArray_GETITEM(vor_nodes, (char*) ind);
             d = PyFloat_AsDouble(arr_item);
             v1[k] = d;
-            u += (d - p1[k]);
+            u += (d - p1[k])*p2p1[k];
             div += p2p1[k]*p2p1[k];
             Py_DECREF(arr_item);
         }
@@ -70,6 +72,7 @@ int intersect_voronoi_nodes(double* p1, double* p2, double* p3, double* p2p1, do
         if((u >= 0)&&(u <= 1)){
             len=0.0;
             for (k=0; k<vor_shape[1]; k++){
+                //d = (u*p2p1[k] + p1[k] - v1[k]);
                 d = (u*p2p1[k] + p1[k] - v1[k]);
                 len += d*d;
             }
@@ -118,9 +121,7 @@ static PyObject *compute_collision_array(PyObject *self, PyObject *args)
     p3 = (double*)malloc(sizeof(double)*(int)shape[1]);
     v1 = (double*)malloc(sizeof(double)*(int)shape[1]);
     p2p1 = (double*)malloc(sizeof(double)*(int)shape[1]);
-    printf("%i, %i\n", dims[0], dims[1]);
-    collision_array = PyArray_ZEROS(2, dims, NPY_INT, 0);
-    printf("HERE\n");
+    collision_array = (PyArrayObject*) PyArray_ZEROS(2, dims, NPY_INT, 0);
 
     for (i=0; i<shape[0]; i++){
         for (j=i+1; j<shape[0]; j++){
