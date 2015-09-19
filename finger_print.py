@@ -24,7 +24,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 from matplotlib.patches import Circle, PathPatch
 
-cutoff=25
+cutoff=10
 probe=1.86
 def get_exclude_dists(voro,rads, xyzarray):
     badids=[]
@@ -55,17 +55,6 @@ def minimum_supercell(cell, cutoff):
               vol/np.linalg.norm(a_cross_b)]
     return tuple(int(math.ceil(2*cutoff/x)) for x in widths)
 
-def drawSphere(xCenter, yCenter, zCenter, r):
-    #draw sphere
-    u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-    x=np.cos(u)*np.sin(v)
-    y=np.sin(u)*np.sin(v)
-    z=np.cos(v)
-    # shift and scale sphere
-    x = r*x + xCenter
-    y = r*y + yCenter
-    z = r*z + zCenter
-    return (x,y,z)
 
 def main():
     workdir = os.getcwd()
@@ -91,31 +80,33 @@ def main():
     cif = tarball.extractfile(mofname).read().decode('utf=8')
     mof = Structure(name=mofname.name[:-4])
     mof.from_cif(string=cif)
+    cell = mof.cell.cell
+    icell = mof.cell.inverse
     min_supercell = minimum_supercell(mof.cell.cell, cutoff)
     #min_supercell=(1,1,1)
     supercell = np.multiply(mof.cell.cell.T, min_supercell).T
     isupercell = np.linalg.inv(supercell).T
 
-    trans = np.median(supercell, axis=0) - np.median(mof.cell.cell, axis=0)
+    trans = np.mean(supercell, axis=0) - np.mean(mof.cell.cell, axis=0)
     natms = len(mof.atoms)
     xyzcoords = np.empty((natms*np.product(min_supercell),3))
     elements = []
     cells = list(itertools.product(*[itertools.product(range(j)) for j in min_supercell]))
     dcount = 0
     for id, box in enumerate(cells):
-        t = np.sum(np.multiply(mof.cell.cell.T, box).T, axis=1)
+        box = tuple([j[0] for j in box])
+        v = np.dot(cell.T, box).T
         for idx, atom in enumerate(mof.atoms):
-            xyzcoords[dcount] = np.dot(np.dot(isupercell, atom.pos + trans + t) % 1., supercell)
+            xyzcoords[dcount] = np.dot(np.dot(isupercell, atom.pos+trans+v) % 1., supercell) 
             #xyzcoords[dcount] = atom.pos.copy()
             elements.append(atom.type)
             dcount += 1
 
-    vor=Voronoi(xyzcoords[:natms])
+    vor=Voronoi(xyzcoords)
     verts = vor.vertices.copy()
-    inv = mof.cell.inverse
     rem = []
     for id, j in enumerate(verts):
-        i = np.dot(inv,j)
+        i = np.dot(isupercell,j)
         if np.where(i > 1.)[0].shape[0] or np.where(i < 0.)[0].shape[0]:
             rem.append(id)
 
@@ -136,22 +127,26 @@ def main():
     v_rads = np.delete(v_rads, rem, axis=0)
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
     collisions = compute_collision_array(xyzcoords, verts, v_rads)
-    #print(np.where(collisions>0))
     pair_dist = distance.cdist(xyzcoords, xyzcoords)
+    colinds = np.where(collisions>0)
+
     timef=time()
     print("Walltime: %.2f seconds"%(timef-times))
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     sf=10.
+    count =0 
+    for v1,v2 in zip(*colinds):
+        if count == 100:
+            break
+        p1, p2 = xyzcoords[v1], xyzcoords[v2]
+        length = np.linalg.norm(p2-p1)
+        dv = (p2-p1)/length
+        ax.quiver(p2[0], p2[1], p2[2], dv[0], dv[1], dv[2], length=length, arrow_length_ratio=0.09, color='k')
+        count += 1
     ax.scatter(xyzcoords[:,0], xyzcoords[:,1], xyzcoords[:,2], c='b', s=uff_rads*sf)
     ax.scatter(verts[:,0], verts[:,1], verts[:,2], c='r', s=v_rads*sf)
-    #for idx, (x,y,z) in enumerate(verts):
-    #    (xs,ys,zs) = drawSphere(x,y,z,v_rads[idx])
-    #    ax.plot_wireframe(xs,ys,zs, color='r')
 
-    #for idx, (x,y,z) in enumerate(xyzcoords):
-    #    (xs,ys,zs) = drawSphere(x,y,z,uff_rads[idx])
-    #    ax.plot_wireframe(xs,ys,zs, color='b')
     plt.show()
 if __name__=="__main__":
     main()
