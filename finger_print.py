@@ -14,7 +14,7 @@ sys.path[:0] = [os.path.expandvars('$HOME/modules/faps'),
                                                 sys.version_info.minor))]
 from SphereCollision import compute_collision_array 
 from faps import Structure, Atom, Cell
-from elements import UFF
+from elements import UFF, atomic_number
 from scipy.spatial import Voronoi, distance
 from scipy import linalg
 import matplotlib.pyplot as plt
@@ -55,6 +55,14 @@ def minimum_supercell(cell, cutoff):
               vol/np.linalg.norm(a_cross_b)]
     return tuple(int(math.ceil(2*cutoff/x)) for x in widths)
 
+def construct_hologram(pair_dist, collisions, elements, natms):
+
+    for j in range(natms):
+        for k, dist in enumerate(pair_dist[j]):
+            if (j!=k) and (dist <= cutoff) and (not collisions[j,k]):
+                hologram[j] = atomic_number.index(elements[j])
+                hologram[k] = atomic_number.index(elements[k])
+                hologram[l] = dist
 
 def main():
     workdir = os.getcwd()
@@ -128,6 +136,8 @@ def main():
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
     collisions = compute_collision_array(xyzcoords, verts, v_rads)
     pair_dist = distance.cdist(xyzcoords, xyzcoords)
+
+    construct_hologram(pair_dist, collisions, elements, natms)
     colinds = np.where(collisions>0)
 
     timef=time()
@@ -136,17 +146,17 @@ def main():
     ax = fig.add_subplot(111, projection='3d')
     sf=10.
     count =0 
-    for v1,v2 in zip(*colinds):
-        if count == 100:
-            break
-        p1, p2 = xyzcoords[v1], xyzcoords[v2]
-        length = np.linalg.norm(p2-p1)
-        dv = (p2-p1)/length
-        ax.quiver(p2[0], p2[1], p2[2], dv[0], dv[1], dv[2], length=length, arrow_length_ratio=0.09, color='k')
-        count += 1
-    ax.scatter(xyzcoords[:,0], xyzcoords[:,1], xyzcoords[:,2], c='b', s=uff_rads*sf)
-    ax.scatter(verts[:,0], verts[:,1], verts[:,2], c='r', s=v_rads*sf)
+    #for v1,v2 in zip(*colinds):
+    #    if count == 100:
+    #        break
+    #    p1, p2 = xyzcoords[v1], xyzcoords[v2]
+    #    length = np.linalg.norm(p2-p1)
+    #    dv = (p2-p1)/length
+    #    ax.quiver(p2[0], p2[1], p2[2], dv[0], dv[1], dv[2], length=length, arrow_length_ratio=0.09, color='k')
+    #    count += 1
+    #ax.scatter(xyzcoords[:,0], xyzcoords[:,1], xyzcoords[:,2], c='b', s=uff_rads*sf)
+    #ax.scatter(verts[:,0], verts[:,1], verts[:,2], c='r', s=v_rads*sf)
 
-    plt.show()
+    #plt.show()
 if __name__=="__main__":
     main()
