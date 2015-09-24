@@ -14,7 +14,7 @@ sys.path[:0] = [os.path.expandvars('$HOME/modules/faps'),
                                                 sys.version_info.minor))]
 from SphereCollision import compute_collision_array 
 from faps import Structure, Atom, Cell
-from elements import UFF, atomic_number
+from elements import UFF, ATOMIC_NUMBER
 from scipy.spatial import Voronoi, distance
 from scipy import linalg
 import matplotlib.pyplot as plt
@@ -24,8 +24,124 @@ from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 from matplotlib.patches import Circle, PathPatch
 
-cutoff=10
+cutoff = 20.
+nbins = 15
 probe=1.86
+class Hologram(object):
+
+    def __init__(self, name="Default"):
+        self.name = name
+        self.atomic_bins = {1:0,
+                            6:1,
+                            7:2,
+                            8:3,
+                            9:4,
+                            16:5,
+                            17:6,
+                            30:7,
+                            35:8,
+                            53:9}
+        self.distance_bins, self.deltabin = np.linspace(0, cutoff, nbins, retstep=True) 
+        self.similarity_func = None
+
+        self.hologram=np.zeros((len(self.atomic_bins.keys()),
+                                 len(self.atomic_bins.keys()),
+                                 nbins))
+
+    def construct_hologram(pair_dist, collisions, elements, natms):
+        for j in range(natms):
+            for k in range(j+1, natms):
+                dist = pair_dist[j,k]
+                if (j!=k) and (dist <= cutoff) and (not collisions[j,k]):
+                    nums = sorted([ATOMIC_NUMBER.index(elements[j]), ATOMIC_NUMBER.index(elements[k])])
+                    nums.reverse()
+                    distbin1 = math.floor(dist/cutoff*nbins)
+                    distbin2 = math.ceil(dist/cutoff*nbins)
+                    distfrac1 = 1.-np.abs(self.distance_bins[distbin1] - dist)/self.deltabin
+                    distfrac2 = 1.-np.abs(self.distance_bins[distbin2] - dist)/self.deltabin
+                    print(distfrac1, distfrac2)
+                    self.hologram[self.atomic_bins[nums[0]],
+                              self_atomic_bins[nums[1]], 
+                              distbin1] += distfrac1
+                    self.hologram[self.atomic_bins[nums[0]],
+                              self_atomic_bins[nums[1]], 
+                              distbin2] += distfrac2
+
+    def set_similarity_metric(self,val="mtw_cont"):
+        """Following metrics for similarity testing:
+        mtw_cont (default)
+        mtw_bin
+        mtu_cont
+        mtu_bin
+        tan_bin
+        tan_cont
+        tan_abs_bin
+        """
+        if val == "mtw_cont":
+            self.similarity_func = self.mtw_cont 
+        elif val == "mtw_bin":
+            self.similarity_func = self.mtw_bin
+        elif val == "mtu_cont":
+            self.similarity_func = self.mtu_cont
+        elif val == "mtu_bin":
+            self.similarity_func = self.mtu_bin
+        elif val == "tan_bin":
+            self.similarity_func = self.tan_bin
+        elif val == "tan_cont":
+            self.similarity_func = self.tan_cont
+        elif val == "tan_abs_bin":
+            self.similarity_func = self.tan_abs_bin
+
+    def __ror__(self, other):
+        """Tanimoto similarity"""
+        return self.similarity_func(other)
+
+    def mtw_bin(self, other):
+        p = self.p(other)
+        return 1./3.*(self.tan_bin(other)*(2.-p) + tan_abs_bin(other)*(1.+p))
+    
+    def mtu_bin(self, other):
+        return 0.5*(self.tan_bin(other) + self.tan_abs_bin(other))
+
+    def mtw_cont(self, other):
+        p = self.p(other)
+        return 1./3.*(self.tan_cont(other)*(2.-p) + tan_abs_bin(other)*(1.+p))
+
+    def mtu_cont(self, other):
+        return 0.5*(self.tan_cont(other) + self.tan_abs_bin(other))
+
+    def tan_bin(self, other):
+        alike = np.where(self.hologram == other)
+
+        a = np.array(np.where(self.hologram > 0.))
+        b = np.array(np.where(other > 0.))
+        c = np.where(self.hologram[alike] > 0.)[0]
+        return  len(c) / (len(a) + len(b) - len(c))
+
+    def tan_cont(self, other):
+        ab = np.sum(np.multiply(self.hologram,other))
+        a = np.sum(np.multiply(self.hologram, self.hologram))
+        b = np.sum(np.multiply(other, other))
+        return ab / (a + b - ab)
+    
+    def tan_abs_bin(self, other):
+        """Just deal with the last dimension"""
+        holo = self.hologram[-1::].flatten()
+        oo = other[-1::].flatten()
+        alike = np.where(holo == oo)
+        a = float(len(np.array(np.where(holo == 0.))))
+        b = float(len(np.array(np.where(oo == 0.))))
+        n = float(len(holo.shape[0])) 
+        c = float(len(np.where(holo[alike] == 0.)[0]))
+        return (n+c-a-b)/(n-c)
+
+    def p(self, other):
+        a = float(len(np.array(np.where(self.hologram > 0.))))
+        b = float(len(np.array(np.where(other > 0.))))
+        n = float(self.hologram.size)
+        return (a+b)/(2.*n)
+
+
 def get_exclude_dists(voro,rads, xyzarray):
     badids=[]
 
@@ -54,15 +170,6 @@ def minimum_supercell(cell, cutoff):
               vol/np.linalg.norm(c_cross_a),
               vol/np.linalg.norm(a_cross_b)]
     return tuple(int(math.ceil(2*cutoff/x)) for x in widths)
-
-def construct_hologram(pair_dist, collisions, elements, natms):
-
-    for j in range(natms):
-        for k, dist in enumerate(pair_dist[j]):
-            if (j!=k) and (dist <= cutoff) and (not collisions[j,k]):
-                hologram[j] = atomic_number.index(elements[j])
-                hologram[k] = atomic_number.index(elements[k])
-                hologram[l] = dist
 
 def main():
     workdir = os.getcwd()
@@ -136,16 +243,17 @@ def main():
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
     collisions = compute_collision_array(xyzcoords, verts, v_rads)
     pair_dist = distance.cdist(xyzcoords, xyzcoords)
-
-    construct_hologram(pair_dist, collisions, elements, natms)
-    colinds = np.where(collisions>0)
+    holo = Hologram(mof.name)
+    holo.construct_hologram(pair_dist, collisions, elements, natms)
+    
 
     timef=time()
     print("Walltime: %.2f seconds"%(timef-times))
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    sf=10.
-    count =0 
+    #fig = plt.figure()
+    #ax = fig.add_subplot(111, projection='3d')
+    #sf=10.
+    #count =0 
+    #colinds = np.where(collisions>0)
     #for v1,v2 in zip(*colinds):
     #    if count == 100:
     #        break
