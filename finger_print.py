@@ -12,20 +12,21 @@ sys.path[:0] = [os.path.expandvars('$HOME/modules/faps'),
                                                 platform.machine(), 
                                                 sys.version_info.major, 
                                                 sys.version_info.minor))]
-from SphereCollision import compute_collision_array 
+from SphereCollision import minimg_distances, compute_collision_array 
 from faps import Structure, Atom, Cell
 from elements import UFF, ATOMIC_NUMBER
 from scipy.spatial import Voronoi, distance
 from scipy import linalg
 import matplotlib.pyplot as plt
 import math
+import pickle
 import itertools
 from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 from matplotlib.patches import Circle, PathPatch
 
 cutoff = 15.
-nbins = 20
+nbins = 30
 probe=1.86
 class Hologram(object):
 
@@ -53,6 +54,7 @@ class Hologram(object):
         for j in range(natms):
             for k in range(j+1, natms):
                 dist = pair_dist[j,k]
+                #print("distance: %.2f"%dist)
                 if (j!=k) and (dist <= cutoff) and (not collisions[j,k]):
                     nums = sorted([ATOMIC_NUMBER.index(elements[j]), ATOMIC_NUMBER.index(elements[k])])
                     nums.reverse()
@@ -60,6 +62,8 @@ class Hologram(object):
                     distbin2 = math.ceil(dist/cutoff*nbins)
                     distfrac1 = 1.-np.abs(self.distance_bins[distbin1] - dist)/self.deltabin
                     distfrac2 = 1.-np.abs(self.distance_bins[distbin2] - dist)/self.deltabin
+                    #print("dist bin: %i; dist frac: %.2f"%(distbin1, distfrac1))
+                    #print("dist bin: %i; dist frac: %.2f"%(distbin2, distfrac2))
                     self.hologram[self.atomic_bins[nums[0]],
                               self.atomic_bins[nums[1]], 
                               distbin1] += distfrac1
@@ -111,10 +115,11 @@ class Hologram(object):
         return 0.5*(self.tan_cont(other) + self.tan_abs_bin(other))
 
     def tan_bin(self, other):
-        alike = np.where(self.hologram == other.hologram)
-        a = float(np.array(np.where(self.hologram > 0.)).shape[1])
-        b = float(np.array(np.where(other.hologram > 0.)).shape[1])
-        c = float(len(np.where(self.hologram[alike] > 0.)[0]))
+        a = float(np.array(np.nonzero(self.hologram)).shape[1])
+        b = float(np.array(np.nonzero(other.hologram)).shape[1])
+        c = float(np.array(
+                    np.nonzero(
+                        np.logical_and(self.hologram > 0., other.hologram > 0.))).shape[1])
         return  c / (a + b - c)
 
     def tan_cont(self, other):
@@ -125,22 +130,19 @@ class Hologram(object):
     
     def tan_abs_bin(self, other):
         """Just deal with the last dimension"""
-        holo = self.hologram[-1::].flatten()
-        oo = other.hologram[-1::].flatten()
-        alike = np.where(holo == oo)
-
-        a = float(len(np.array(np.where(holo > 0.))))
-        #a = float(len(np.array(np.where(holo == 0.))))
-        b = float(len(np.array(np.where(oo > 0.))))
-        #b = float(len(np.array(np.where(oo == 0.))))
-        n = float(holo.shape[0])
-        c = float(len(np.where(holo[alike] > 0.)[0]))
-        #c = float(len(np.where(holo[alike] == 0.)[0]))
+        #holo = self.hologram[-1::].flatten()
+        #oo = other.hologram[-1::].flatten()
+        holo = self.hologram
+        oo = other.hologram
+        a = float(np.array(np.nonzero(holo)).shape[1])
+        b = float(np.array(np.nonzero(oo)).shape[1])
+        n = float(holo.size)
+        c = float(np.array(np.nonzero(np.logical_and(holo>0., oo>0.))).shape[1]) 
         return (n+c-a-b)/(n-c)
 
     def p(self, other):
-        a = float(len(np.array(np.where(self.hologram > 0.))))
-        b = float(len(np.array(np.where(other.hologram > 0.))))
+        a = float(np.array(np.nonzero(self.hologram)).shape[1])
+        b = float(np.array(np.nonzero(other.hologram)).shape[1])
         n = float(self.hologram.size)
         return (a+b)/(2.*n)
 
@@ -179,7 +181,7 @@ def obtain_hologram(mof):
     min_supercell = minimum_supercell(mof.cell.cell, cutoff)
     #min_supercell=(2,2,2)
     # ensure at least 1 periodic image for each dimension 
-    min_supercell = tuple([max(i,j) for i, j in zip(min_supercell, (2,2,2))])
+    #min_supercell = tuple([max(i,j) for i, j in zip(min_supercell, (2,2,2))])
     supercell = np.multiply(mof.cell.cell.T, min_supercell).T
     isupercell = np.linalg.inv(supercell).T
 
@@ -208,7 +210,9 @@ def obtain_hologram(mof):
 
     verts = np.delete(verts, rem, axis=0)
     rem = []
-    v_a_dists = distance.cdist(verts, xyzcoords)
+    # c script to compute minimum image distances
+    #v_a_dists = distance.cdist(verts, xyzcoords)
+    v_a_dists = minimg_distances(verts, xyzcoords, supercell)
     v_rads = v_a_dists.min(axis=1)
     vids = np.argmin(v_a_dists, axis=1)
     uff_rads = np.array([UFF[i][0] for i in elements])
@@ -218,47 +222,11 @@ def obtain_hologram(mof):
     verts = np.delete(verts, rem, axis=0)
     v_rads = np.delete(v_rads, rem, axis=0)
     #excl_dists = get_exclude_dists(verts, v_rads, xyzcoords)
-    collisions = compute_collision_array(xyzcoords, verts, v_rads)
-    pair_dist = distance.cdist(xyzcoords, xyzcoords)
+    collisions = compute_collision_array(xyzcoords, verts, v_rads, supercell)
+    #pair_dist = distance.cdist(xyzcoords, xyzcoords)
+    pair_dist = minimg_distances(xyzcoords, xyzcoords, supercell)
     holo = Hologram(mof.name)
     holo.construct_hologram(pair_dist, collisions, elements, natms)
-    return holo
-
-def main():
-    workdir = os.getcwd()
-    targzfiles = [i for i in os.listdir(workdir) if os.path.isfile(os.path.join(workdir, i)) and i.endswith(".tar.gz")]
-    try: 
-        if sys.argv[1].endswith('.tar.gz'):
-            targzfiles=[sys.argv[1]]
-    except IndexError:
-        pass
-
-    times = time()
-    atom_distribution = {}
-    atom_type_distribution = {}
-    ltfive = []
-    gtfiveltthousand = []
-    gtthousand = []
-    atomcount_distrib = []
-
-    # this is just a test
-    
-    tarball = tarfile.open(os.path.join(workdir, targzfiles[0]), 'r:gz')
-    holos = []
-    for j in range(2):
-        mofname = tarball.next()
-        print(mofname.name[:-4])
-        cif = tarball.extractfile(mofname).read().decode('utf=8')
-        mof = Structure(name=mofname.name[:-4])
-        mof.from_cif(string=cif)
-        holos.append(obtain_hologram(mof))
-
-    holo1 = holos[0]
-    holo2 = holos[1]
-    holo1.set_similarity_metric("mtw_cont")
-    print(holo1 | holo2)
-    timef=time()
-    print("Walltime: %.2f seconds"%(timef-times))
     #fig = plt.figure()
     #ax = fig.add_subplot(111, projection='3d')
     #sf=10.
@@ -276,5 +244,59 @@ def main():
     #ax.scatter(verts[:,0], verts[:,1], verts[:,2], c='r', s=v_rads*sf)
 
     #plt.show()
+    return holo
+
+def mofgen(workdir,files):
+    tgzs,cifs = [],[]
+    for j in files:
+        if j.endswith('tar.gz'):
+            tgzs.append(j)
+
+        elif j.endswith('.cif'):
+            cifs.append(j)
+    for j in tgzs:
+        tarball = tarfile.open(os.path.join(workdir, j), 'r:gz')
+        mf = tarball.next()
+        while mf is not None:
+            mofname = mf.name
+            mf = tarball.next()
+            if mofname.endswith('.cif'):
+                cif = tarball.extractfile(mofname).read().decode('utf=8')
+                mof = Structure(name=mofname[:-4])
+                mof.from_cif(string=cif)
+                yield mof
+            
+    for k in cifs:
+        mof = Structure(name=k[:-4])
+        mof.from_cif(k)
+        yield mof
+
+def main():
+    workdir = os.getcwd()
+    files = [i for i in os.listdir(workdir) if os.path.isfile(os.path.join(workdir, i)) and i.endswith(".tar.gz") or i.endswith(".cif")]
+    try: 
+        if sys.argv[1].endswith('.tar.gz') or sys.argv[1].endswith('.cif'):
+            files=[sys.argv[1]]
+    except IndexError:
+        pass
+
+    times = time()
+    
+    holos = {} 
+    count = 0
+    zifs = mofgen(workdir, files)
+    for zif in zifs:
+        print(zif.name)
+        count += 1
+        holos[zif.name] = obtain_hologram(zif)
+         
+    hf = open('holograms.pkl', 'wb')
+    pickle.dump(holos, hf)
+    hf.close()
+
+    #holo1.set_similarity_metric("tan_cont")
+    #print(holo1 | holo2)
+    timef=time()
+    print("Walltime: %.2f seconds"%(timef-times))
 if __name__=="__main__":
     main()
