@@ -256,10 +256,8 @@ def mofgen(workdir,files):
             cifs.append(j)
     for j in tgzs:
         tarball = tarfile.open(os.path.join(workdir, j), 'r:gz')
-        mf = tarball.next()
-        while mf is not None:
+        for mf in tarball:
             mofname = mf.name
-            mf = tarball.next()
             if mofname.endswith('.cif'):
                 cif = tarball.extractfile(mofname).read().decode('utf=8')
                 mof = Structure(name=mofname[:-4])
@@ -283,11 +281,9 @@ def main():
     times = time()
     
     holos = {} 
-    count = 0
     zifs = mofgen(workdir, files)
     for zif in zifs:
         print(zif.name)
-        count += 1
         holos[zif.name] = obtain_hologram(zif)
          
     hf = open('holograms.pkl', 'wb')
